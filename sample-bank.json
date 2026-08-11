@@ -1,0 +1,9 @@
+{
+  "name": "公考题库示例",
+  "questions": [
+    {"number":1,"type":"single","stem":"我国的根本政治制度是：","options":["人民代表大会制度","民族区域自治制度","基层群众自治制度","中国共产党领导的多党合作制度"],"answer":"A","explanation":"人民代表大会制度是我国的根本政治制度。"},
+    {"number":2,"type":"judge","stem":"行政机关可以法外设定权力。","answer":"错误","explanation":"行政机关必须坚持法定职责必须为、法无授权不可为。"},
+    {"number":3,"type":"blank","stem":"我国现行宪法于____年通过。","answer":"1982","explanation":"现行《中华人民共和国宪法》于1982年12月4日通过。"},
+    {"number":4,"type":"multiple","stem":"下列属于公文文种的有：","options":{"A":"通知","B":"报告","C":"请示","D":"计划"},"answer":["A","B","C"],"explanation":"通知、报告、请示属于法定公文文种，计划不是。"}
+  ]
+}

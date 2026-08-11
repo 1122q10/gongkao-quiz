@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="本地优先的公考 PDF 题库整理与刷题工具" />
+  <title>公考刷题本</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" data-page="home" aria-label="返回首页"><span>公</span>公考刷题本</button>
+    <nav>
+      <button data-page="home" class="nav-btn active">题库</button>
+      <button data-page="import" class="nav-btn">导入</button>
+      <button data-page="mistakes" class="nav-btn">错题本 <b id="mistake-count">0</b></button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="page-home" class="page active">
+      <div class="hero">
+        <div><p class="eyebrow">LOCAL-FIRST STUDY</p><h1>把公考资料，变成真正能刷的题库。</h1><p>题目和答案可以分开导入。选择后即时判分，解析随后出现。</p></div>
+        <button class="primary large" data-page="import">导入资料</button>
+      </div>
+      <div class="section-title"><div><h2>我的题库</h2><p id="bank-summary">所有数据仅保存在当前浏览器</p></div></div>
+      <div id="bank-list" class="bank-grid"></div>
+    </section>
+
+    <section id="page-import" class="page">
+      <div class="section-title"><div><p class="eyebrow">IMPORT & REVIEW</p><h1>导入并校对题目</h1><p>支持 PDF、TXT、Markdown、JSON。扫描版 PDF 暂需先做 OCR。</p></div></div>
+      <div class="import-grid">
+        <label class="dropzone"><span class="step">1</span><strong>题目文档</strong><small>PDF / TXT / MD / JSON</small><input id="question-file" type="file" accept=".pdf,.txt,.md,.json" /><em id="question-file-name">选择文件</em></label>
+        <label class="dropzone"><span class="step">2</span><strong>答案与解析文档</strong><small>可选；也可以和题目在同一文件</small><input id="answer-file" type="file" accept=".pdf,.txt,.md,.json" /><em id="answer-file-name">选择文件</em></label>
+      </div>
+      <div class="import-actions">
+        <label>题库名称 <input id="bank-name" placeholder="例如：2025 国考行测真题" /></label>
+        <button id="parse-btn" class="primary">开始识别</button>
+      </div>
+      <p id="parse-status" class="status" aria-live="polite"></p>
+      <div id="review-panel" class="review-panel hidden">
+        <div class="section-title"><div><h2>导入预览</h2><p id="review-summary"></p></div><button id="save-bank-btn" class="primary">确认保存题库</button></div>
+        <div id="review-list"></div>
+      </div>
+    </section>
+
+    <section id="page-quiz" class="page">
+      <div class="quiz-head"><button id="quit-quiz" class="ghost">← 退出</button><div><strong id="quiz-bank-name"></strong><span id="quiz-progress"></span></div><button id="toggle-favorite" class="ghost">☆ 收藏</button></div>
+      <div class="progress"><i id="progress-bar"></i></div>
+      <article class="question-card">
+        <div class="question-meta"><span id="question-type"></span><span id="question-number"></span></div>
+        <div id="shared-material" class="material hidden"></div>
+        <h2 id="question-stem"></h2>
+        <div id="answer-area"></div>
+        <button id="submit-answer" class="primary wide">提交答案</button>
+        <div id="result-panel" class="result hidden"><h3 id="result-title"></h3><p><b>正确答案：</b><span id="correct-answer"></span></p><div><b>解析：</b><p id="explanation"></p></div></div>
+        <div class="quiz-nav"><button id="prev-question" class="ghost">上一题</button><button id="next-question" class="primary">下一题</button></div>
+      </article>
+    </section>
+
+    <section id="page-mistakes" class="page">
+      <div class="section-title"><div><p class="eyebrow">REVIEW</p><h1>错题本</h1><p>答对后可以从错题本移除。</p></div><button id="practice-mistakes" class="primary">重刷错题</button></div>
+      <div id="mistake-list" class="list-stack"></div>
+    </section>
+  </main>
+
+  <template id="empty-template"><div class="empty"><div>暂无内容</div><p></p></div></template>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

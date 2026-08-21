@@ -115,10 +115,28 @@
             <strong id="quiz-bank-name"></strong
             ><span id="quiz-progress"></span>
           </div>
-          <button id="toggle-favorite" class="ghost">☆ 收藏</button>
+          <div class="quiz-actions">
+            <button id="toggle-ink" class="ghost">✎ 书写</button
+            ><button id="toggle-favorite" class="ghost">☆ 收藏</button>
+          </div>
         </div>
         <div class="progress"><i id="progress-bar"></i></div>
-        <article class="question-card">
+        <article class="question-card" id="annotatable-question">
+          <canvas id="ink-canvas" class="ink-canvas hidden"></canvas>
+          <div id="ink-toolbar" class="ink-toolbar hidden">
+            <button data-ink-tool="pen" class="active">画笔</button>
+            <button data-ink-tool="eraser">橡皮</button>
+            <label
+              >颜色 <input id="ink-color" type="color" value="#d83228"
+            /></label>
+            <label
+              >粗细
+              <input id="ink-size" type="range" min="2" max="16" value="4"
+            /></label>
+            <button id="ink-undo">撤销</button
+            ><button id="ink-clear">清空</button>
+            <button id="ink-done" class="primary">完成</button>
+          </div>
           <div class="question-meta">
             <span id="question-type"></span><span id="question-number"></span>
           </div>

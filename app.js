@@ -2,6 +2,10 @@ const featureStyle = document.createElement("link");
 featureStyle.rel = "stylesheet";
 featureStyle.href = "features.css";
 document.head.append(featureStyle);
+const inkStyle = document.createElement("link");
+inkStyle.rel = "stylesheet";
+inkStyle.href = "ink.css";
+document.head.append(inkStyle);
 const K = {
   b: "gongkao_quiz_banks_v1",
   m: "gongkao_quiz_mistakes_v1",
@@ -452,7 +456,14 @@ function renderImport() {
           )
           .join(
             "",
-          )}</select><select data-f="knowledgeId">${options(q.knowledgeId)}</select></div><label>相关考点（可多选）<select data-f="relatedKnowledgeIds" multiple size="3">${flat().map((n) => `<option value="${n.id}" ${q.relatedKnowledgeIds.includes(n.id) ? "selected" : ""}>${"　".repeat(n.depth)}${esc(n.name)}</option>`).join("")}</select></label><textarea data-f="stem">${esc(q.stem)}</textarea><input data-f="options" value="${esc(q.options.map((o) => `${o.key}.${o.text}`).join(" | "))}"><div class="row"><input data-f="answer" value="${esc(Array.isArray(q.answer) ? q.answer.join("") : q.answer)}" placeholder="正确答案"><small>来源：${esc(q.source.questionFile)}</small></div><textarea data-f="explanation" placeholder="答案解析">${esc(q.explanation)}</textarea></div><button class="ghost danger" data-rm="${i}">删除</button></div>`,
+          )}</select><select data-f="knowledgeId">${options(q.knowledgeId)}</select></div><label>相关考点（可多选）<select data-f="relatedKnowledgeIds" multiple size="3">${flat()
+          .map(
+            (n) =>
+              `<option value="${n.id}" ${q.relatedKnowledgeIds.includes(n.id) ? "selected" : ""}>${"　".repeat(n.depth)}${esc(n.name)}</option>`,
+          )
+          .join(
+            "",
+          )}</select></label><textarea data-f="stem">${esc(q.stem)}</textarea><input data-f="options" value="${esc(q.options.map((o) => `${o.key}.${o.text}`).join(" | "))}"><div class="row"><input data-f="answer" value="${esc(Array.isArray(q.answer) ? q.answer.join("") : q.answer)}" placeholder="正确答案"><small>来源：${esc(q.source.questionFile)}</small></div><textarea data-f="explanation" placeholder="答案解析">${esc(q.explanation)}</textarea></div><button class="ghost danger" data-rm="${i}">删除</button></div>`,
     )
     .join("");
   $$("[data-ri]").forEach((el, i) =>
@@ -464,9 +475,7 @@ function renderImport() {
             updateDraft(
               i,
               x.dataset.f,
-              x.multiple
-                ? [...x.selectedOptions].map((o) => o.value)
-                : x.value,
+              x.multiple ? [...x.selectedOptions].map((o) => o.value) : x.value,
             )),
       ),
   );
@@ -480,12 +489,10 @@ function renderImport() {
 }
 function updateDraft(i, f, v) {
   if (f === "options")
-    draft[i].options = v
-      .split("|")
-      .map((s, j) => ({
-        key: (s.match(/^\s*([A-H])/) || [])[1] || String.fromCharCode(65 + j),
-        text: s.trim().replace(/^[A-H][.、）)]?\s*/, ""),
-      }));
+    draft[i].options = v.split("|").map((s, j) => ({
+      key: (s.match(/^\s*([A-H])/) || [])[1] || String.fromCharCode(65 + j),
+      text: s.trim().replace(/^[A-H][.、）)]?\s*/, ""),
+    }));
   else if (f === "answer") draft[i].answer = clean(v, draft[i].type);
   else if (f === "relatedKnowledgeIds") draft[i].relatedKnowledgeIds = v;
   else draft[i][f] = v;
@@ -532,6 +539,7 @@ function startMixed(rows) {
   renderQuestion();
 }
 function renderQuestion() {
+  closeInk(false);
   const q = session.questions[session.index],
     r = records[q.id] || {};
   $("#quiz-bank-name").textContent = session.bank.name;
@@ -558,6 +566,7 @@ function renderQuestion() {
   $("#next-question").textContent =
     session.index === session.questions.length - 1 ? "完成" : "下一题";
   renderAnswer(q);
+  requestAnimationFrame(() => prepareInk(q.id));
 }
 function renderAnswer(q) {
   const multi = q.type === "multiple";
@@ -598,6 +607,132 @@ function equal(a, b, t) {
     String(b).replace(/\s/g, "").toLowerCase()
   );
 }
+let inkMode = false,
+  inkTool = "pen",
+  inkDrawing = false,
+  inkHistory = [],
+  inkLast = null,
+  inkQuestionId = "";
+const inkCanvas = $("#ink-canvas"),
+  inkCtx = inkCanvas.getContext("2d");
+function prepareInk(qid) {
+  inkQuestionId = qid;
+  const card = $("#annotatable-question"),
+    rect = card.getBoundingClientRect(),
+    ratio = Math.min(devicePixelRatio || 1, 2),
+    saved = records[qid]?.ink || "";
+  inkCanvas.width = Math.max(1, Math.round(rect.width * ratio));
+  inkCanvas.height = Math.max(1, Math.round(rect.height * ratio));
+  inkCanvas.style.width = `${rect.width}px`;
+  inkCanvas.style.height = `${rect.height}px`;
+  inkCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  inkCtx.lineCap = "round";
+  inkCtx.lineJoin = "round";
+  inkHistory = [];
+  if (saved) {
+    const image = new Image();
+    image.onload = () => inkCtx.drawImage(image, 0, 0, rect.width, rect.height);
+    image.src = saved;
+  }
+}
+function inkPoint(event) {
+  const rect = inkCanvas.getBoundingClientRect();
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+}
+function snapshotInk() {
+  if (inkHistory.length >= 20) inkHistory.shift();
+  inkHistory.push(inkCanvas.toDataURL("image/webp", 0.82));
+}
+function restoreInk(data) {
+  inkCtx.clearRect(0, 0, inkCanvas.width, inkCanvas.height);
+  if (!data) return;
+  const image = new Image();
+  image.onload = () =>
+    inkCtx.drawImage(
+      image,
+      0,
+      0,
+      inkCanvas.getBoundingClientRect().width,
+      inkCanvas.getBoundingClientRect().height,
+    );
+  image.src = data;
+}
+function saveInk() {
+  if (!inkQuestionId) return;
+  const r = records[inkQuestionId] || { attempts: [] };
+  r.ink = inkCanvas.toDataURL("image/webp", 0.82);
+  records[inkQuestionId] = r;
+  localStorage.setItem(K.r, JSON.stringify(records));
+}
+function openInk() {
+  if (!session) return;
+  inkMode = true;
+  prepareInk(session.questions[session.index].id);
+  inkCanvas.classList.remove("hidden");
+  $("#ink-toolbar").classList.remove("hidden");
+  document.body.classList.add("ink-active");
+  $("#toggle-ink").textContent = "✎ 书写中";
+}
+function closeInk(store = true) {
+  if (!inkMode) return;
+  if (store) saveInk();
+  inkMode = false;
+  inkDrawing = false;
+  inkCanvas?.classList.add("hidden");
+  $("#ink-toolbar")?.classList.add("hidden");
+  document.body.classList.remove("ink-active");
+  if ($("#toggle-ink")) $("#toggle-ink").textContent = "✎ 书写";
+}
+$("#toggle-ink").onclick = () => (inkMode ? closeInk() : openInk());
+$("#ink-done").onclick = () => closeInk();
+$$("[data-ink-tool]").forEach(
+  (button) =>
+    (button.onclick = () => {
+      inkTool = button.dataset.inkTool;
+      $$("[data-ink-tool]").forEach((x) =>
+        x.classList.toggle("active", x === button),
+      );
+    }),
+);
+inkCanvas.onpointerdown = (event) => {
+  if (!inkMode) return;
+  event.preventDefault();
+  inkCanvas.setPointerCapture(event.pointerId);
+  snapshotInk();
+  inkDrawing = true;
+  inkLast = inkPoint(event);
+};
+inkCanvas.onpointermove = (event) => {
+  if (!inkDrawing) return;
+  event.preventDefault();
+  const point = inkPoint(event),
+    pressure = event.pointerType === "pen" ? Math.max(event.pressure, 0.35) : 1;
+  inkCtx.save();
+  inkCtx.globalCompositeOperation =
+    inkTool === "eraser" ? "destination-out" : "source-over";
+  inkCtx.strokeStyle = $("#ink-color").value;
+  inkCtx.lineWidth =
+    Number($("#ink-size").value) * pressure * (inkTool === "eraser" ? 3 : 1);
+  inkCtx.beginPath();
+  inkCtx.moveTo(inkLast.x, inkLast.y);
+  inkCtx.lineTo(point.x, point.y);
+  inkCtx.stroke();
+  inkCtx.restore();
+  inkLast = point;
+};
+inkCanvas.onpointerup = inkCanvas.onpointercancel = () => {
+  if (inkDrawing) saveInk();
+  inkDrawing = false;
+};
+$("#ink-undo").onclick = () => restoreInk(inkHistory.pop() || "");
+$("#ink-clear").onclick = () => {
+  snapshotInk();
+  inkCtx.clearRect(0, 0, inkCanvas.width, inkCanvas.height);
+  saveInk();
+};
+window.addEventListener("resize", () => {
+  if (session && !inkMode) prepareInk(session.questions[session.index].id);
+});
 $("#submit-answer").onclick = () => {
   const q = session.questions[session.index],
     a = userAnswer(q);

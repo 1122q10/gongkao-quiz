@@ -6,6 +6,10 @@ const inkStyle = document.createElement("link");
 inkStyle.rel = "stylesheet";
 inkStyle.href = "ink.css";
 document.head.append(inkStyle);
+const manageStyle = document.createElement("link");
+manageStyle.rel = "stylesheet";
+manageStyle.href = "manage.css";
+document.head.append(manageStyle);
 const K = {
   b: "gongkao_quiz_banks_v1",
   m: "gongkao_quiz_mistakes_v1",
@@ -50,9 +54,15 @@ banks.forEach((b) =>
       knowledgeId: q.knowledgeId || "",
       relatedKnowledgeIds: q.relatedKnowledgeIds || [],
       source: q.source || { bank: b.name, number: q.number },
+      classificationStatus:
+        q.classificationStatus || (q.knowledgeId ? "confirmed" : "pending"),
+      suggestedKnowledgeId: q.suggestedKnowledgeId || "",
     }),
   ),
 );
+Object.values(records).forEach((r) => {
+  if (r.ink && !r.keepInk) delete r.ink;
+});
 const types = {
   single: "单选题",
   multiple: "多选题",
@@ -122,9 +132,20 @@ function related(nid, deep = true) {
   const ids = deep ? desc(nid) : [nid];
   return all().filter(
     ({ q }) =>
-      ids.includes(q.knowledgeId) ||
-      (q.relatedKnowledgeIds || []).some((x) => ids.includes(x)),
+      q.classificationStatus === "confirmed" &&
+      (ids.includes(q.knowledgeId) ||
+        (q.relatedKnowledgeIds || []).some((x) => ids.includes(x))),
   );
+}
+function questionKnowledgeLabel(q) {
+  const label = path(q.knowledgeId)
+    .map((x) => x.name)
+    .join(" / ");
+  return q.classificationStatus === "confirmed"
+    ? label || "未分类"
+    : label
+      ? `待分类（候选：${label}）`
+      : "待分类";
 }
 function options(sel = "") {
   return (
@@ -137,13 +158,95 @@ function options(sel = "") {
       .join("")
   );
 }
+function recommendKnowledge(q) {
+  const text = `${q.stem || ""} ${q.explanation || ""} ${(q.options || []).map((o) => o.text).join(" ")}`,
+    ranked = flat()
+      .map((n) => {
+        const chars = [...new Set(n.name.replace(/\s/g, ""))],
+          hit = chars.filter((c) => text.includes(c)).length,
+          exact = text.includes(n.name),
+          ratio = chars.length ? hit / chars.length : 0,
+          depthBonus = n.depth * 0.4,
+          score = (exact ? 8 + n.name.length : 0) + ratio * 4 + depthBonus;
+        return { id: n.id, name: n.name, score, exact, ratio };
+      })
+      .filter((x) => x.exact || (x.ratio >= 0.65 && x.name.length >= 2))
+      .sort((a, b) => b.score - a.score),
+    best = ranked[0],
+    second = ranked[1];
+  if (!best || best.score < 3) return null;
+  const confidence =
+    best.exact && (!second || best.score - second.score >= 2)
+      ? "高"
+      : best.score - (second?.score || 0) >= 1.5
+        ? "中"
+        : "低";
+  return {
+    id: best.id,
+    confidence,
+    reason: best.exact
+      ? `题目内容直接出现“${best.name}”`
+      : `题目内容与“${best.name}”关键词较接近`,
+  };
+}
 function renderAll() {
   renderHome();
   renderTree();
   renderReview();
+  renderManager();
   $("#review-count").textContent =
     Object.keys(mistakes).length + Object.keys(favorites).length;
 }
+$("#export-data").onclick = () => {
+  const backup = {
+    app: "gongkao-quiz",
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    data: { banks, mistakes, knowledge: tree, favorites, records },
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {
+      type: "application/json",
+    }),
+    link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `公考刷题本备份-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+};
+$("#import-data").onchange = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const backup = JSON.parse(await file.text());
+    if (backup.app !== "gongkao-quiz" || !backup.data)
+      throw Error("这不是有效的公考刷题本备份文件。");
+    if (!confirm("恢复备份会替换当前浏览器中的全部学习数据，确定继续吗？"))
+      return;
+    banks = backup.data.banks || [];
+    mistakes = backup.data.mistakes || {};
+    tree = backup.data.knowledge || [];
+    favorites = backup.data.favorites || {};
+    records = backup.data.records || {};
+    banks.forEach((b) =>
+      b.questions.forEach((q) =>
+        Object.assign(q, {
+          knowledgeId: q.knowledgeId || "",
+          relatedKnowledgeIds: q.relatedKnowledgeIds || [],
+          source: q.source || { bank: b.name, number: q.number },
+          classificationStatus:
+            q.classificationStatus || (q.knowledgeId ? "confirmed" : "pending"),
+          suggestedKnowledgeId: q.suggestedKnowledgeId || "",
+        }),
+      ),
+    );
+    save();
+    alert("备份恢复完成。");
+  } catch (error) {
+    alert(error.message || "备份文件读取失败。");
+  } finally {
+    event.target.value = "";
+  }
+};
 function renderHome() {
   const qs = all(),
     ats = Object.values(records).flatMap((r) => r.attempts || []),
@@ -312,14 +415,18 @@ $("#parse-btn").onclick = async () => {
       ? normalizeJson(JSON.parse(await qf.text()))
       : parseDocs(await readFile(qf), af ? await readFile(af) : "");
     if (!draft.length) throw Error("没有识别到题目，请检查题号格式。");
-    draft.forEach(
-      (q) =>
-        (q.source = {
-          questionFile: qf.name,
-          answerFile: af?.name || "",
-          number: q.number,
-        }),
-    );
+    draft.forEach((q) => {
+      const suggestion = recommendKnowledge(q);
+      q.suggestedKnowledgeId = suggestion?.id || "";
+      q.suggestionConfidence = suggestion?.confidence || "";
+      q.suggestionReason = suggestion?.reason || "";
+      q.classificationStatus = "pending";
+      q.source = {
+        questionFile: qf.name,
+        answerFile: af?.name || "",
+        number: q.number,
+      };
+    });
     renderImport();
     status(`已识别 ${draft.length} 道题，请校对考点和来源。`);
   } catch (e) {
@@ -371,6 +478,8 @@ function normalize(q, i) {
     confidence: q.confidence ?? 1,
     knowledgeId: q.knowledgeId || "",
     relatedKnowledgeIds: q.relatedKnowledgeIds || [],
+    classificationStatus: q.classificationStatus || "pending",
+    suggestedKnowledgeId: q.suggestedKnowledgeId || "",
   };
 }
 function parseDocs(qt, at = "") {
@@ -456,14 +565,22 @@ function renderImport() {
           )
           .join(
             "",
-          )}</select><select data-f="knowledgeId">${options(q.knowledgeId)}</select></div><label>相关考点（可多选）<select data-f="relatedKnowledgeIds" multiple size="3">${flat()
+          )}</select><select data-f="knowledgeId">${options(q.knowledgeId)}</select></div>${
+          q.suggestedKnowledgeId
+            ? `<div class="recommendation">推荐：<b>${esc(
+                path(q.suggestedKnowledgeId)
+                  .map((x) => x.name)
+                  .join(" / "),
+              )}</b>（${q.suggestionConfidence || "低"}可信）<small>${esc(q.suggestionReason || "")}</small><button class="ghost" data-apply-suggestion="${i}">采用推荐</button></div>`
+            : `<div class="recommendation">未找到可靠推荐，请人工选择考点。</div>`
+        }<label>相关考点（可多选）<select data-f="relatedKnowledgeIds" multiple size="3">${flat()
           .map(
             (n) =>
               `<option value="${n.id}" ${q.relatedKnowledgeIds.includes(n.id) ? "selected" : ""}>${"　".repeat(n.depth)}${esc(n.name)}</option>`,
           )
           .join(
             "",
-          )}</select></label><textarea data-f="stem">${esc(q.stem)}</textarea><input data-f="options" value="${esc(q.options.map((o) => `${o.key}.${o.text}`).join(" | "))}"><div class="row"><input data-f="answer" value="${esc(Array.isArray(q.answer) ? q.answer.join("") : q.answer)}" placeholder="正确答案"><small>来源：${esc(q.source.questionFile)}</small></div><textarea data-f="explanation" placeholder="答案解析">${esc(q.explanation)}</textarea></div><button class="ghost danger" data-rm="${i}">删除</button></div>`,
+          )}</select></label><textarea data-f="stem">${esc(q.stem)}</textarea><input data-f="options" value="${esc(q.options.map((o) => `${o.key}.${o.text}`).join(" | "))}"><div class="row"><input data-f="answer" value="${esc(Array.isArray(q.answer) ? q.answer.join("") : q.answer)}" placeholder="正确答案"><small>来源：${esc(q.source.questionFile)}</small></div><textarea data-f="explanation" placeholder="答案解析">${esc(q.explanation)}</textarea><button class="${q.classificationStatus === "confirmed" ? "primary" : "ghost"}" data-confirm-classification="${i}">${q.classificationStatus === "confirmed" ? "✓ 分类已确认" : "确认此分类"}</button></div><button class="ghost danger" data-rm="${i}">删除</button></div>`,
     )
     .join("");
   $$("[data-ri]").forEach((el, i) =>
@@ -486,6 +603,24 @@ function renderImport() {
         renderImport();
       }),
   );
+  $$("[data-apply-suggestion]").forEach(
+    (x) =>
+      (x.onclick = () => {
+        const q = draft[+x.dataset.applySuggestion];
+        q.knowledgeId = q.suggestedKnowledgeId;
+        q.classificationStatus = "pending";
+        renderImport();
+      }),
+  );
+  $$("[data-confirm-classification]").forEach(
+    (x) =>
+      (x.onclick = () => {
+        const q = draft[+x.dataset.confirmClassification];
+        if (!q.knowledgeId) return alert("请先选择一个主考点。");
+        q.classificationStatus = "confirmed";
+        renderImport();
+      }),
+  );
 }
 function updateDraft(i, f, v) {
   if (f === "options")
@@ -495,7 +630,10 @@ function updateDraft(i, f, v) {
     }));
   else if (f === "answer") draft[i].answer = clean(v, draft[i].type);
   else if (f === "relatedKnowledgeIds") draft[i].relatedKnowledgeIds = v;
-  else draft[i][f] = v;
+  else {
+    draft[i][f] = v;
+    if (f === "knowledgeId") draft[i].classificationStatus = "pending";
+  }
 }
 $("#save-bank-btn").onclick = () => {
   const name = $("#bank-name").value.trim() || "未命名题库";
@@ -539,7 +677,7 @@ function startMixed(rows) {
   renderQuestion();
 }
 function renderQuestion() {
-  closeInk(false);
+  closeInk(true);
   const q = session.questions[session.index],
     r = records[q.id] || {};
   $("#quiz-bank-name").textContent = session.bank.name;
@@ -552,11 +690,8 @@ function renderQuestion() {
   $("#question-stem").textContent = q.stem;
   $("#shared-material").textContent = q.material || "";
   $("#shared-material").classList.toggle("hidden", !q.material);
-  $("#question-tags").innerHTML = `<span>${esc(
-    path(q.knowledgeId)
-      .map((x) => x.name)
-      .join(" / ") || "未分类",
-  )}</span><span>来源：${esc(q.source?.bank || find(q.id)?.b.name || "")}</span>`;
+  $("#question-tags").innerHTML =
+    `<span>${esc(questionKnowledgeLabel(q))}</span><span>来源：${esc(q.source?.bank || find(q.id)?.b.name || "")}</span>`;
   $("#result-panel").classList.add("hidden");
   $("#submit-answer").classList.remove("hidden");
   $("#toggle-favorite").textContent = favorites[q.id] ? "★ 已收藏" : "☆ 收藏";
@@ -620,7 +755,7 @@ function prepareInk(qid) {
   const card = $("#annotatable-question"),
     rect = card.getBoundingClientRect(),
     ratio = Math.min(devicePixelRatio || 1, 2),
-    saved = records[qid]?.ink || "";
+    saved = records[qid]?.keepInk ? records[qid]?.ink || "" : "";
   inkCanvas.width = Math.max(1, Math.round(rect.width * ratio));
   inkCanvas.height = Math.max(1, Math.round(rect.height * ratio));
   inkCanvas.style.width = `${rect.width}px`;
@@ -660,7 +795,13 @@ function restoreInk(data) {
 function saveInk() {
   if (!inkQuestionId) return;
   const r = records[inkQuestionId] || { attempts: [] };
-  r.ink = inkCanvas.toDataURL("image/webp", 0.82);
+  if ($("#keep-ink").checked) {
+    r.ink = inkCanvas.toDataURL("image/webp", 0.82);
+    r.keepInk = true;
+  } else {
+    delete r.ink;
+    delete r.keepInk;
+  }
   records[inkQuestionId] = r;
   localStorage.setItem(K.r, JSON.stringify(records));
 }
@@ -668,6 +809,7 @@ function openInk() {
   if (!session) return;
   inkMode = true;
   prepareInk(session.questions[session.index].id);
+  $("#keep-ink").checked = Boolean(records[inkQuestionId]?.keepInk);
   inkCanvas.classList.remove("hidden");
   $("#ink-toolbar").classList.remove("hidden");
   document.body.classList.add("ink-active");
@@ -721,14 +863,25 @@ inkCanvas.onpointermove = (event) => {
   inkLast = point;
 };
 inkCanvas.onpointerup = inkCanvas.onpointercancel = () => {
-  if (inkDrawing) saveInk();
+  if (inkDrawing && $("#keep-ink").checked) saveInk();
   inkDrawing = false;
 };
 $("#ink-undo").onclick = () => restoreInk(inkHistory.pop() || "");
 $("#ink-clear").onclick = () => {
   snapshotInk();
   inkCtx.clearRect(0, 0, inkCanvas.width, inkCanvas.height);
-  saveInk();
+  if ($("#keep-ink").checked) saveInk();
+};
+$("#keep-ink").onchange = () => {
+  if ($("#keep-ink").checked) saveInk();
+  else {
+    const r = records[inkQuestionId];
+    if (r) {
+      delete r.ink;
+      delete r.keepInk;
+      localStorage.setItem(K.r, JSON.stringify(records));
+    }
+  }
 };
 window.addEventListener("resize", () => {
   if (session && !inkMode) prepareInk(session.questions[session.index].id);
@@ -784,9 +937,9 @@ $("#save-note").onclick = () => {
 };
 $("#practice-similar").onclick = () => {
   const q = session.questions[session.index];
-  q.knowledgeId
+  q.knowledgeId && q.classificationStatus === "confirmed"
     ? startMixed(related(q.knowledgeId).filter((x) => x.q.id !== q.id))
-    : alert("这道题还没有设置考点。");
+    : alert("这道题的考点还没有人工确认。");
 };
 $("#prev-question").onclick = () => {
   if (session.index) {
@@ -800,7 +953,110 @@ $("#next-question").onclick = () => {
     renderQuestion();
   } else page("home");
 };
-$("#quit-quiz").onclick = () => page("home");
+$("#quit-quiz").onclick = () => {
+  closeInk(true);
+  page("home");
+};
+function renderManager() {
+  const bankSelect = $("#manage-bank");
+  if (!bankSelect) return;
+  const current = bankSelect.value || banks[0]?.id || "";
+  bankSelect.innerHTML = banks.length
+    ? banks
+        .map((b) => `<option value="${b.id}">${esc(b.name)}</option>`)
+        .join("")
+    : '<option value="">暂无题库</option>';
+  if (banks.some((b) => b.id === current)) bankSelect.value = current;
+  const bank = banks.find((b) => b.id === bankSelect.value),
+    mode = $("#manage-status").value,
+    questions = (bank?.questions || []).filter(
+      (q) => mode === "all" || q.classificationStatus === mode,
+    ),
+    pending = (bank?.questions || []).filter(
+      (q) => q.classificationStatus !== "confirmed",
+    ).length;
+  $("#manage-summary").textContent = bank
+    ? `${questions.length} 道题 · ${pending} 道待分类`
+    : "";
+  $("#manage-list").innerHTML = questions.length
+    ? questions
+        .map((q) => {
+          const suggestion = recommendKnowledge(q);
+          q.suggestedKnowledgeId =
+            suggestion?.id || q.suggestedKnowledgeId || "";
+          return `<article class="manage-item ${q.classificationStatus === "confirmed" ? "confirmed" : "pending"}" data-manage-q="${q.id}"><div class="question-meta"><span class="status-pill ${q.classificationStatus === "confirmed" ? "ok" : ""}">${q.classificationStatus === "confirmed" ? "✓ 已确认" : "待分类"}</span><span>原题号 ${esc(q.source?.number || q.number)}</span></div><div class="manage-grid"><label>题型<select data-mfield="type">${Object.entries(
+            types,
+          )
+            .map(
+              ([k, v]) =>
+                `<option value="${k}" ${q.type === k ? "selected" : ""}>${v}</option>`,
+            )
+            .join(
+              "",
+            )}</select></label><label>主考点<select data-mfield="knowledgeId">${options(q.knowledgeId)}</select></label></div>${
+            q.suggestedKnowledgeId
+              ? `<div class="recommendation">系统建议：<b>${esc(
+                  path(q.suggestedKnowledgeId)
+                    .map((x) => x.name)
+                    .join(" / "),
+                )}</b>${suggestion ? ` · ${suggestion.confidence}可信 · ${esc(suggestion.reason)}` : ""}<button data-manager-apply="${q.id}" class="ghost">采用建议</button></div>`
+              : '<div class="recommendation">没有可靠建议，需要人工分类。</div>'
+          }<label>相关考点<select data-mfield="relatedKnowledgeIds" multiple size="3">${flat()
+            .map(
+              (n) =>
+                `<option value="${n.id}" ${(q.relatedKnowledgeIds || []).includes(n.id) ? "selected" : ""}>${"　".repeat(n.depth)}${esc(n.name)}</option>`,
+            )
+            .join(
+              "",
+            )}</select></label><label>题干<textarea data-mfield="stem">${esc(q.stem)}</textarea></label><label>选项<input data-mfield="options" value="${esc(q.options.map((o) => `${o.key}.${o.text}`).join(" | "))}"></label><div class="manage-grid"><label>答案<input data-mfield="answer" value="${esc(Array.isArray(q.answer) ? q.answer.join("") : q.answer)}"></label><label>原题号<input data-mfield="source.number" value="${esc(q.source?.number || q.number)}"></label></div><label>解析<textarea data-mfield="explanation">${esc(q.explanation)}</textarea></label><div class="manage-grid"><label>题目文件<input data-mfield="source.questionFile" value="${esc(q.source?.questionFile || "")}"></label><label>答案文件<input data-mfield="source.answerFile" value="${esc(q.source?.answerFile || "")}"></label></div><div class="card-actions"><button class="primary" data-manager-confirm="${q.id}">确认分类并保存</button><button class="ghost" data-manager-save="${q.id}">仅保存修改</button></div></article>`;
+        })
+        .join("")
+    : '<div class="empty"><div>没有符合条件的题目</div></div>';
+  $$("[data-manage-q]").forEach((card) => {
+    const q = bank.questions.find((x) => x.id === card.dataset.manageQ);
+    card.querySelectorAll("[data-mfield]").forEach((input) => {
+      input.oninput = () => {
+        const field = input.dataset.mfield,
+          value = input.multiple
+            ? [...input.selectedOptions].map((o) => o.value)
+            : input.value;
+        if (field === "options")
+          q.options = value.split("|").map((s, i) => ({
+            key:
+              (s.match(/^\s*([A-H])/) || [])[1] || String.fromCharCode(65 + i),
+            text: s.trim().replace(/^[A-H][.、）)]?\s*/, ""),
+          }));
+        else if (field === "answer") q.answer = clean(value, q.type);
+        else if (field.startsWith("source.")) {
+          q.source = q.source || {};
+          q.source[field.split(".")[1]] = value;
+        } else q[field] = value;
+        if (field === "knowledgeId") q.classificationStatus = "pending";
+      };
+    });
+  });
+  $$("[data-manager-apply]").forEach(
+    (x) =>
+      (x.onclick = () => {
+        const q = bank.questions.find((v) => v.id === x.dataset.managerApply);
+        q.knowledgeId = q.suggestedKnowledgeId;
+        q.classificationStatus = "pending";
+        save();
+      }),
+  );
+  $$("[data-manager-confirm]").forEach(
+    (x) =>
+      (x.onclick = () => {
+        const q = bank.questions.find((v) => v.id === x.dataset.managerConfirm);
+        if (!q.knowledgeId) return alert("请先选择一个主考点。");
+        q.classificationStatus = "confirmed";
+        save();
+      }),
+  );
+  $$("[data-manager-save]").forEach((x) => (x.onclick = save));
+}
+$("#manage-bank").onchange = renderManager;
+$("#manage-status").onchange = renderManager;
 function renderReview() {
   const map =
       reviewTab === "mistakes"
@@ -816,11 +1072,7 @@ function renderReview() {
         .map(({ b, q }) => {
           const r = records[q.id] || {},
             m = mistakes[q.id];
-          return `<article class="mistake-card"><div class="chips"><span>${esc(
-            path(q.knowledgeId)
-              .map((x) => x.name)
-              .join(" / ") || "未分类",
-          )}</span><span>${esc(q.source?.bank || b.name)} · 第${q.source?.number || q.number}题</span></div><h3>${esc(q.stem)}</h3>${m ? `<p>累计答错 ${m.wrongCount || 1} 次</p>` : ""}${r.errorReason ? `<p><b>错因：</b>${esc(r.errorReason)}</p>` : ""}${r.note ? `<p class="note"><b>笔记：</b>${esc(r.note)}</p>` : ""}<div class="card-actions"><button class="primary" data-retry="${q.id}" data-bank="${b.id}">重做</button>${q.knowledgeId ? `<button class="ghost" data-similar="${q.knowledgeId}">练同类题</button>` : ""}<button class="ghost danger" data-remove="${q.id}">移除</button></div></article>`;
+          return `<article class="mistake-card"><div class="chips"><span>${esc(questionKnowledgeLabel(q))}</span><span>${esc(q.source?.bank || b.name)} · 第${q.source?.number || q.number}题</span></div><h3>${esc(q.stem)}</h3>${m ? `<p>累计答错 ${m.wrongCount || 1} 次</p>` : ""}${r.errorReason ? `<p><b>错因：</b>${esc(r.errorReason)}</p>` : ""}${r.note ? `<p class="note"><b>笔记：</b>${esc(r.note)}</p>` : ""}<div class="card-actions"><button class="primary" data-retry="${q.id}" data-bank="${b.id}">重做</button>${q.knowledgeId && q.classificationStatus === "confirmed" ? `<button class="ghost" data-similar="${q.knowledgeId}">练同类题</button>` : ""}<button class="ghost danger" data-remove="${q.id}">移除</button></div></article>`;
         })
         .join("")
     : '<div class="empty"><div>暂无内容</div><p>相关题目会出现在这里。</p></div>';

@@ -12,6 +12,7 @@
       <nav>
         <button data-page="home" class="nav-btn active">题库</button
         ><button data-page="knowledge" class="nav-btn">考点</button
+        ><button data-page="manage" class="nav-btn">题目管理</button
         ><button data-page="import" class="nav-btn">导入</button
         ><button data-page="review" class="nav-btn">
           复习 <b id="review-count">0</b>
@@ -29,6 +30,16 @@
           <button class="primary large" data-page="import">导入资料</button>
         </div>
         <div id="dashboard" class="stat-grid"></div>
+        <div class="backup-bar">
+          <div>
+            <strong>数据安全</strong
+            ><small>备份包含题库、考点、错题、收藏和笔记</small>
+          </div>
+          <button id="export-data" class="ghost">导出备份</button
+          ><label class="ghost file-button"
+            >导入恢复<input id="import-data" type="file" accept=".json"
+          /></label>
+        </div>
         <div class="section-title">
           <div>
             <h2>我的题库</h2>
@@ -36,6 +47,24 @@
           </div>
         </div>
         <div id="bank-list" class="bank-grid"></div>
+      </section>
+      <section id="page-manage" class="page">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">QUESTION MANAGER</p>
+            <h1>题目管理与分类</h1>
+            <p>修改已导入题目，并逐题确认考点。</p>
+          </div>
+        </div>
+        <div class="manage-filters">
+          <select id="manage-bank"></select
+          ><select id="manage-status">
+            <option value="all">全部题目</option>
+            <option value="pending">只看待分类</option>
+            <option value="confirmed">只看已确认</option></select
+          ><span id="manage-summary"></span>
+        </div>
+        <div id="manage-list" class="list-stack"></div>
       </section>
       <section id="page-knowledge" class="page">
         <div class="section-title">
@@ -133,6 +162,9 @@
               >粗细
               <input id="ink-size" type="range" min="2" max="16" value="4"
             /></label>
+            <label class="keep-ink"
+              ><input id="keep-ink" type="checkbox" /> 保留本题笔迹</label
+            >
             <button id="ink-undo">撤销</button
             ><button id="ink-clear">清空</button>
             <button id="ink-done" class="primary">完成</button>

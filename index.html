@@ -1,70 +1,201 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="本地优先的公考 PDF 题库整理与刷题工具" />
-  <title>公考刷题本</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <header class="topbar">
-    <button class="brand" data-page="home" aria-label="返回首页"><span>公</span>公考刷题本</button>
-    <nav>
-      <button data-page="home" class="nav-btn active">题库</button>
-      <button data-page="import" class="nav-btn">导入</button>
-      <button data-page="mistakes" class="nav-btn">错题本 <b id="mistake-count">0</b></button>
-    </nav>
-  </header>
-
-  <main>
-    <section id="page-home" class="page active">
-      <div class="hero">
-        <div><p class="eyebrow">LOCAL-FIRST STUDY</p><h1>把公考资料，变成真正能刷的题库。</h1><p>题目和答案可以分开导入。选择后即时判分，解析随后出现。</p></div>
-        <button class="primary large" data-page="import">导入资料</button>
-      </div>
-      <div class="section-title"><div><h2>我的题库</h2><p id="bank-summary">所有数据仅保存在当前浏览器</p></div></div>
-      <div id="bank-list" class="bank-grid"></div>
-    </section>
-
-    <section id="page-import" class="page">
-      <div class="section-title"><div><p class="eyebrow">IMPORT & REVIEW</p><h1>导入并校对题目</h1><p>支持 PDF、TXT、Markdown、JSON。扫描版 PDF 暂需先做 OCR。</p></div></div>
-      <div class="import-grid">
-        <label class="dropzone"><span class="step">1</span><strong>题目文档</strong><small>PDF / TXT / MD / JSON</small><input id="question-file" type="file" accept=".pdf,.txt,.md,.json" /><em id="question-file-name">选择文件</em></label>
-        <label class="dropzone"><span class="step">2</span><strong>答案与解析文档</strong><small>可选；也可以和题目在同一文件</small><input id="answer-file" type="file" accept=".pdf,.txt,.md,.json" /><em id="answer-file-name">选择文件</em></label>
-      </div>
-      <div class="import-actions">
-        <label>题库名称 <input id="bank-name" placeholder="例如：2025 国考行测真题" /></label>
-        <button id="parse-btn" class="primary">开始识别</button>
-      </div>
-      <p id="parse-status" class="status" aria-live="polite"></p>
-      <div id="review-panel" class="review-panel hidden">
-        <div class="section-title"><div><h2>导入预览</h2><p id="review-summary"></p></div><button id="save-bank-btn" class="primary">确认保存题库</button></div>
-        <div id="review-list"></div>
-      </div>
-    </section>
-
-    <section id="page-quiz" class="page">
-      <div class="quiz-head"><button id="quit-quiz" class="ghost">← 退出</button><div><strong id="quiz-bank-name"></strong><span id="quiz-progress"></span></div><button id="toggle-favorite" class="ghost">☆ 收藏</button></div>
-      <div class="progress"><i id="progress-bar"></i></div>
-      <article class="question-card">
-        <div class="question-meta"><span id="question-type"></span><span id="question-number"></span></div>
-        <div id="shared-material" class="material hidden"></div>
-        <h2 id="question-stem"></h2>
-        <div id="answer-area"></div>
-        <button id="submit-answer" class="primary wide">提交答案</button>
-        <div id="result-panel" class="result hidden"><h3 id="result-title"></h3><p><b>正确答案：</b><span id="correct-answer"></span></p><div><b>解析：</b><p id="explanation"></p></div></div>
-        <div class="quiz-nav"><button id="prev-question" class="ghost">上一题</button><button id="next-question" class="primary">下一题</button></div>
-      </article>
-    </section>
-
-    <section id="page-mistakes" class="page">
-      <div class="section-title"><div><p class="eyebrow">REVIEW</p><h1>错题本</h1><p>答对后可以从错题本移除。</p></div><button id="practice-mistakes" class="primary">重刷错题</button></div>
-      <div id="mistake-list" class="list-stack"></div>
-    </section>
-  </main>
-
-  <template id="empty-template"><div class="empty"><div>暂无内容</div><p></p></div></template>
-  <script type="module" src="app.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>公考刷题本</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button class="brand" data-page="home"><span>公</span>公考刷题本</button>
+      <nav>
+        <button data-page="home" class="nav-btn active">题库</button
+        ><button data-page="knowledge" class="nav-btn">考点</button
+        ><button data-page="import" class="nav-btn">导入</button
+        ><button data-page="review" class="nav-btn">
+          复习 <b id="review-count">0</b>
+        </button>
+      </nav>
+    </header>
+    <main>
+      <section id="page-home" class="page active">
+        <div class="hero">
+          <div>
+            <p class="eyebrow">LOCAL-FIRST STUDY</p>
+            <h1>按考点刷题，把每次错误变成进步。</h1>
+            <p>导入资料、整理考点、记录错因，再一键练习同类题。</p>
+          </div>
+          <button class="primary large" data-page="import">导入资料</button>
+        </div>
+        <div id="dashboard" class="stat-grid"></div>
+        <div class="section-title">
+          <div>
+            <h2>我的题库</h2>
+            <p id="bank-summary"></p>
+          </div>
+        </div>
+        <div id="bank-list" class="bank-grid"></div>
+      </section>
+      <section id="page-knowledge" class="page">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">KNOWLEDGE MAP</p>
+            <h1>可编辑考点树</h1>
+            <p>可以持续新增、细分、重命名和移动考点。</p>
+          </div>
+          <div class="card-actions">
+            <button id="import-outline" class="ghost">粘贴提纲</button
+            ><button id="add-root" class="primary">＋ 一级考点</button>
+          </div>
+        </div>
+        <div class="knowledge-layout">
+          <aside class="tree-card"><div id="knowledge-tree"></div></aside>
+          <section class="detail-card">
+            <div id="knowledge-detail" class="empty">
+              <div>选择一个考点</div>
+            </div>
+          </section>
+        </div>
+      </section>
+      <section id="page-import" class="page">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">IMPORT & REVIEW</p>
+            <h1>导入并校对题目</h1>
+            <p>支持 PDF、TXT、Markdown、JSON；题目和答案可以分开。</p>
+          </div>
+        </div>
+        <div class="import-grid">
+          <label class="dropzone"
+            ><span class="step">1</span><strong>题目文档</strong
+            ><small>PDF / TXT / MD / JSON</small
+            ><input
+              id="question-file"
+              type="file"
+              accept=".pdf,.txt,.md,.json"
+            /><em id="question-file-name">选择文件</em></label
+          ><label class="dropzone"
+            ><span class="step">2</span><strong>答案与解析文档</strong
+            ><small>可选</small
+            ><input
+              id="answer-file"
+              type="file"
+              accept=".pdf,.txt,.md,.json"
+            /><em id="answer-file-name">选择文件</em></label
+          >
+        </div>
+        <div class="import-actions">
+          <label
+            >题库名称<input
+              id="bank-name"
+              placeholder="例如：2025 国考行测真题" /></label
+          ><label
+            >年份/地区<input
+              id="bank-meta"
+              placeholder="例如：2025 · 国考" /></label
+          ><button id="parse-btn" class="primary">开始识别</button>
+        </div>
+        <p id="parse-status" class="status"></p>
+        <div id="review-panel" class="review-panel hidden">
+          <div class="section-title">
+            <div>
+              <h2>导入预览</h2>
+              <p id="review-summary"></p>
+            </div>
+            <button id="save-bank-btn" class="primary">确认保存题库</button>
+          </div>
+          <div id="review-list"></div>
+        </div>
+      </section>
+      <section id="page-quiz" class="page">
+        <div class="quiz-head">
+          <button id="quit-quiz" class="ghost">← 退出</button>
+          <div>
+            <strong id="quiz-bank-name"></strong
+            ><span id="quiz-progress"></span>
+          </div>
+          <button id="toggle-favorite" class="ghost">☆ 收藏</button>
+        </div>
+        <div class="progress"><i id="progress-bar"></i></div>
+        <article class="question-card">
+          <div class="question-meta">
+            <span id="question-type"></span><span id="question-number"></span>
+          </div>
+          <div id="question-tags" class="chips"></div>
+          <div id="shared-material" class="material hidden"></div>
+          <h2 id="question-stem"></h2>
+          <div id="answer-area"></div>
+          <button id="submit-answer" class="primary wide">提交答案</button>
+          <div id="result-panel" class="result hidden">
+            <h3 id="result-title"></h3>
+            <p><b>正确答案：</b><span id="correct-answer"></span></p>
+            <b>解析：</b>
+            <p id="explanation"></p>
+          </div>
+          <section class="study-panel">
+            <h3>我的学习记录</h3>
+            <label
+              >错因<select id="error-reason">
+                <option value="">未选择</option>
+                <option>知识点不会</option>
+                <option>审题错误</option>
+                <option>计算错误</option>
+                <option>方法错误</option>
+                <option>粗心</option>
+              </select></label
+            ><label
+              >个人笔记<textarea
+                id="personal-note"
+                rows="3"
+                placeholder="记录口诀、易错点或解题方法"
+              ></textarea>
+            </label>
+            <div class="card-actions">
+              <button id="save-note" class="ghost">保存笔记</button
+              ><button id="practice-similar" class="ghost">练同考点题</button>
+            </div>
+          </section>
+          <div class="quiz-nav">
+            <button id="prev-question" class="ghost">上一题</button
+            ><button id="next-question" class="primary">下一题</button>
+          </div>
+        </article>
+      </section>
+      <section id="page-review" class="page">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">REVIEW</p>
+            <h1>复习中心</h1>
+            <p>错题、收藏和笔记集中管理。</p>
+          </div>
+          <button id="practice-mistakes" class="primary">重刷错题</button>
+        </div>
+        <div class="tabs">
+          <button class="tab active" data-review-tab="mistakes">错题</button
+          ><button class="tab" data-review-tab="favorites">收藏</button
+          ><button class="tab" data-review-tab="notes">笔记</button>
+        </div>
+        <div id="review-list" class="list-stack"></div>
+      </section>
+    </main>
+    <dialog id="outline-dialog">
+      <form method="dialog">
+        <h2>粘贴考点提纲</h2>
+        <p>每行一个考点，使用缩进、├─、└─ 表示层级。</p>
+        <textarea
+          id="outline-text"
+          rows="14"
+          placeholder="行测&#10;├─ 言语理解&#10;│  └─ 片段阅读"
+        ></textarea>
+        <div class="card-actions">
+          <button value="cancel" class="ghost">取消</button
+          ><button type="button" id="confirm-outline" class="primary">
+            生成考点树
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <script type="module" src="app.js"></script>
+  </body>
 </html>
